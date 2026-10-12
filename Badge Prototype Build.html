@@ -1,0 +1,656 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Badge Prototype Build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: workbench — 3D cutting-mat stage on the left (sticky), parts bin + part sheet on the right; wiring and assembly order below. */
+:root {
+  --bg: #EDF0F2;
+  --surface: #FFFFFF;
+  --surface-2: #F4F6F7;
+  --ink: #172026;
+  --muted: #5A6873;
+  --line: #D4DBE0;
+  --mat: #DDE6E1;
+  --mat-line: #C8D4CE;
+  --a: #1C7347;          /* Build A: Pi green solder mask */
+  --a-soft: #DCEFE4;
+  --b: #B8620F;          /* Build B: Rockchip amber */
+  --b-soft: #F8E7D4;
+  --warn: #B4232F;
+  --warn-soft: #F9DFE2;
+  --font-display: "Chakra Petch", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Barlow", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1518; --surface: #161E23; --surface-2: #1B252B; --ink: #E5EBEE; --muted: #92A1AB; --line: #27333A;
+    --mat: #131B1F; --mat-line: #1E2A2F; --a: #4CC487; --a-soft: #15301F; --b: #F2A24F; --b-soft: #3A2610;
+    --warn: #FF6B78; --warn-soft: #3B151A; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1518; --surface: #161E23; --surface-2: #1B252B; --ink: #E5EBEE; --muted: #92A1AB; --line: #27333A;
+  --mat: #131B1F; --mat-line: #1E2A2F; --a: #4CC487; --a-soft: #15301F; --b: #F2A24F; --b-soft: #3A2610;
+  --warn: #FF6B78; --warn-soft: #3B151A; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+.app { --cur: var(--a); --cur-soft: var(--a-soft); }
+.app[data-build="B"] { --cur: var(--b); --cur-soft: var(--b-soft); }
+.wrap { max-width: 1320px; margin: 0 auto; padding-inline: 20px; padding-block: 24px 48px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; line-height: 1.15; text-wrap: balance; }
+h1 { font-size: clamp(1.7rem, 3.4vw, 2.4rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.4rem; font-weight: 700; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p { margin: 0; }
+.mono { font-family: var(--font-mono); }
+.label { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+
+header.top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 18px; }
+header.top p { color: var(--muted); max-width: 62ch; margin-top: 6px; }
+
+.builds { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: min(100%, 460px); }
+.build-btn { font: inherit; text-align: left; cursor: pointer; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 10px 14px; display: grid; gap: 2px; }
+.build-btn .t { font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
+.build-btn .c { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+.build-btn[data-b="A"][aria-pressed="true"] { border-color: var(--a); background: var(--a-soft); }
+.build-btn[data-b="B"][aria-pressed="true"] { border-color: var(--b); background: var(--b-soft); }
+.build-btn:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--cur); outline-offset: 2px; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 980px) { .main { grid-template-columns: 1fr; } }
+
+.stage-wrap { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+@media (max-width: 980px) { .stage-wrap { position: static; } }
+.stage { position: relative; height: min(68vh, 620px); min-height: 380px; border-radius: 14px; overflow: hidden; border: 1px solid var(--line);
+  background-color: var(--mat);
+  background-image: linear-gradient(var(--mat-line) 1px, transparent 1px), linear-gradient(90deg, var(--mat-line) 1px, transparent 1px);
+  background-size: 24px 24px; }
+@media (max-width: 600px) { .stage { height: 420px; } }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.stage canvas:active { cursor: grabbing; }
+.tags { position: absolute; inset: 0; pointer-events: none; }
+.tag { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 500;
+  min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; border: 1.5px solid var(--ink); background: var(--surface); color: var(--ink); cursor: pointer; display: grid; place-items: center; white-space: nowrap; }
+.tag[aria-pressed="true"] { background: var(--cur); border-color: var(--cur); color: var(--surface); }
+.tag .nm { display: none; margin-left: 5px; }
+.tag:hover .nm, .tag[aria-pressed="true"] .nm { display: inline; }
+.stage-hud { position: absolute; left: 12px; top: 12px; display: flex; gap: 6px; flex-wrap: wrap; pointer-events: none; }
+.hud-chip { font-family: var(--font-mono); font-size: 0.7rem; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; color: var(--muted); }
+.hud-chip b { color: var(--cur); font-weight: 500; }
+.nogl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 10px; }
+.controls label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.controls input[type=range] { width: 160px; accent-color: var(--cur); }
+.btn { font: inherit; font-size: 0.85rem; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 6px 12px; }
+.btn:hover { border-color: var(--cur); }
+.hint { font-size: 0.82rem; color: var(--muted); }
+
+/* Parts bin */
+.side { display: grid; gap: 16px; min-width: 0; }
+.bin { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.bin-head { display: grid; grid-template-columns: 30px 1fr 74px 74px; gap: 8px; padding: 9px 14px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.bin-head span:nth-child(3) { color: var(--a); text-align: right; }
+.bin-head span:nth-child(4) { color: var(--b); text-align: right; }
+.row { font: inherit; color: inherit; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); cursor: pointer;
+  display: grid; grid-template-columns: 30px 1fr 74px 74px; gap: 8px; align-items: center; padding: 8px 14px; }
+.row:last-of-type { border-bottom: 0; }
+.row:hover { background: var(--surface-2); }
+.row[aria-pressed="true"] { background: var(--cur-soft); }
+.row .i { font-family: var(--font-mono); font-size: 0.75rem; width: 22px; height: 22px; border-radius: 11px; border: 1.5px solid var(--ink); display: grid; place-items: center; }
+.row[aria-pressed="true"] .i { background: var(--cur); border-color: var(--cur); color: var(--surface); }
+.row .n { font-weight: 500; min-width: 0; }
+.row .p { font-family: var(--font-mono); font-size: 0.74rem; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bin-foot { display: grid; grid-template-columns: 30px 1fr 74px 74px; gap: 8px; padding: 10px 14px; border-top: 1.5px solid var(--ink); font-weight: 600; }
+.bin-foot .p { font-family: var(--font-mono); font-size: 0.74rem; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Part sheet */
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 14px; }
+.sheet-head { display: flex; gap: 12px; align-items: start; }
+.sheet-head .big { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; line-height: 1; color: var(--cur); min-width: 30px; }
+.sheet-head p { color: var(--muted); margin-top: 4px; font-size: 0.93rem; }
+.ab { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 460px) { .ab { grid-template-columns: 1fr; } }
+.opt { border-radius: 10px; padding: 12px; display: grid; gap: 4px; align-content: start; border: 1.5px solid transparent; min-width: 0; }
+.opt.A { background: var(--a-soft); }
+.opt.B { background: var(--b-soft); }
+.app[data-build="A"] .opt.A, .app[data-build="B"] .opt.B { border-color: var(--cur); }
+.opt .which { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: .08em; text-transform: uppercase; }
+.opt.A .which { color: var(--a); }
+.opt.B .which { color: var(--b); }
+.opt .pn { font-weight: 600; }
+.opt .pc { font-family: var(--font-mono); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.opt .ps { font-size: 0.8rem; color: var(--muted); }
+.opt .pnote { font-size: 0.85rem; color: var(--ink); }
+.est { font-family: var(--font-mono); font-size: 0.65rem; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: 1px; }
+.alts { display: grid; gap: 8px; }
+.alt { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px dashed var(--line); }
+.alt .an { font-weight: 500; }
+.alt .ac { font-family: var(--font-mono); font-size: 0.8rem; text-align: right; white-space: nowrap; }
+.alt .aw { grid-column: 1 / -1; color: var(--muted); font-size: 0.86rem; }
+.howto { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; font-size: 0.9rem; }
+.howto .label { display: block; margin-bottom: 4px; color: var(--cur); }
+
+/* Below */
+.below { display: grid; gap: 20px; margin-top: 28px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel > p { color: var(--muted); max-width: 70ch; }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 0.9rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--surface-2); }
+td.pin { font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.steps li { counter-increment: s; background: var(--surface-2); border-radius: 10px; padding: 14px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.steps li::before { content: counter(s); grid-row: span 2; font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; color: var(--cur); line-height: 1; }
+.steps b { font-weight: 600; }
+.steps span { color: var(--muted); font-size: 0.88rem; }
+.warnbox { background: var(--warn-soft); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; }
+.warnbox h3 { color: var(--warn); font-size: 1rem; }
+.warnbox ul { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+.foot { color: var(--muted); font-size: 0.82rem; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="app" id="app" data-build="A">
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <span class="label">Moment Badge · prototype hardware</span>
+        <h1>Badge prototype build</h1>
+        <p>Click any part in the 3D model or the parts list to see Build A and Build B options, prices from Indian stores, cheaper or better alternatives, and how to wire it.</p>
+      </div>
+      <div class="builds" role="group" aria-label="Choose build">
+        <button class="build-btn" id="buildA" data-b="A" aria-pressed="true"><span class="t">A · Raspberry Pi Zero 2 W</span><span class="c num" id="totA"></span></button>
+        <button class="build-btn" id="buildB" data-b="B" aria-pressed="false"><span class="t">B · Luckfox Pico (RV1106)</span><span class="c num" id="totB"></span></button>
+      </div>
+    </header>
+
+    <div class="main">
+      <div class="stage-wrap">
+        <div class="stage" id="stage">
+          <div class="stage-hud"><span class="hud-chip">Showing <b id="hudBuild">Build A</b></span><span class="hud-chip">Case ≈ 74 × 60 × 24 mm</span></div>
+          <div class="tags" id="tags"></div>
+        </div>
+        <div class="controls">
+          <label for="explode">Explode <input type="range" id="explode" min="0" max="100" value="70"></label>
+          <button class="btn" id="btnAssembled">Assembled</button>
+          <button class="btn" id="btnExploded">Exploded</button>
+          <button class="btn" id="btnReset">Reset view</button>
+          <span class="hint">Drag to rotate · scroll or pinch to zoom</span>
+        </div>
+      </div>
+
+      <aside class="side">
+        <div class="bin" aria-label="Parts list">
+          <div class="bin-head label"><span>#</span><span>Part</span><span>A ₹</span><span>B ₹</span></div>
+          <div id="rows"></div>
+          <div class="bin-foot"><span></span><span>Per badge</span><span class="p" id="sumA" style="color:var(--a)"></span><span class="p" id="sumB" style="color:var(--b)"></span></div>
+        </div>
+        <div class="sheet" id="sheet" aria-live="polite"></div>
+      </aside>
+    </div>
+
+    <div class="below">
+      <section class="panel">
+        <div><span class="label">Wiring</span><h2 id="wireTitle">Wiring for Build A</h2></div>
+        <p id="wireNote"></p>
+        <div class="tbl"><table><thead><tr><th>#</th><th>Part</th><th>Connection</th></tr></thead><tbody id="wireBody"></tbody></table></div>
+      </section>
+
+      <section class="panel">
+        <div><span class="label">Assembly order</span><h2>Build and test in this order</h2></div>
+        <ol class="steps">
+          <li><b>Bench-test board + camera</b><span>Flash the OS (Raspberry Pi OS Lite for A, Luckfox Buildroot for B). Record a 1-minute 1080p clip before soldering anything.</span></li>
+          <li><b>Build the power stage alone</b><span>Battery → charge/boost module. Measure 5.0–5.2 V at the output under load with a multimeter. Only then connect the board.</span></li>
+          <li><b>Add mic and gyroscope</b><span>Short wires, soldered straight to the pads. Check the mic records and the gyroscope reports on I2C.</span></li>
+          <li><b>Add button, LED and motor driver</b><span>Tap the button: LED blinks, motor buzzes, a timestamp lands in events.jsonl.</span></li>
+          <li><b>30-minute heat test on the bench</b><span>Record continuously. If the board gets too hot to touch, add a small heatsink and vent holes in the case.</span></li>
+          <li><b>Fit into the case</b><span>Camera and mic against the front holes with foam tape. Gyroscope glued rigid. Battery at the back, wrapped in Kapton tape.</span></li>
+          <li><b>Close and attach the clip</b><span>Magnet clip on the back. Check the lens sits level when worn on a shirt.</span></li>
+          <li><b>4-hour soak test</b><span>Wear it for a full function length. Note battery left, temperature, and any dropped files.</span></li>
+        </ol>
+        <div class="warnbox">
+          <h3>LiPo safety</h3>
+          <ul>
+            <li>Use only batteries with a protection circuit, and charge only through the charge module.</li>
+            <li>Never puncture, bend or short the pouch. Insulate wires and the pouch with Kapton tape.</li>
+            <li>Don't charge unattended, and stop using any battery that swells.</li>
+          </ul>
+        </div>
+      </section>
+      <p class="foot">Prices from Robu, Zbotic, ThinkRobotics, Probots, Techiesms, Robocraze and IndiaMART listings (Oct 2026). Items marked <span class="est">est.</span> are estimates where no listing was found. Prices and stock change often; check before ordering. 3D model is schematic and not to exact scale.</p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  // ---------- Parts data ----------
+  var P = [
+    { id: 'board', n: 1, name: 'Main board',
+      role: 'The computer. Records video, compresses it in hardware (H.264), writes files, logs taps and gyroscope data.',
+      A: { name: 'Raspberry Pi Zero 2 W', lo: 1549, hi: 1709, src: 'Robu', note: '65 × 30 mm. Hardware 1080p30 H.264. Stock goes in and out.' },
+      B: { name: 'Luckfox Pico Ultra (RV1106)', lo: 1700, hi: 2000, src: 'ThinkRobotics / Zbotic', note: 'Same chip family as commercial body cameras. Hardware H.264/H.265. Check your variant has a microSD slot.' },
+      alts: [
+        { name: 'Luckfox Pico Mini / Max', cost: '₹1,000–1,800', est: true, why: 'Smaller RV1103/RV1106 boards with a microSD slot. RV1103 has less memory.' },
+        { name: 'Raspberry Pi Zero W (v1)', cost: '₹1,200–1,500', est: true, why: 'Can encode 1080p but single-core and slow. Only if the Zero 2 W is out of stock.' }
+      ],
+      wire: { A: 'Power into pin 2 (5V) and pin 6 (GND). Solder wires straight to the GPIO pads instead of a header to save height.',
+              B: 'Power into the board\'s 5V input (check the Luckfox pinout). Flash the Luckfox Buildroot image before assembly.' } },
+    { id: 'camera', n: 2, name: 'Camera module',
+      role: 'Captures the video. A wide angle matters because the badge sits on the chest, not at eye level.',
+      A: { name: 'Raspberry Pi Camera Module 3 Wide', lo: 3505, hi: 3599, src: 'Robu', note: '12MP Sony IMX708, 120° view, autofocus, HDR. Best low light of these options.' },
+      B: { name: 'Waveshare SC3336 3MP', lo: 962, hi: 962, src: 'Zbotic', note: '2304 × 1296 at 30 fps, good low light for the price. Stock lens may be narrower than 120°.' },
+      alts: [
+        { name: 'Camera Module 3 Wide NoIR', cost: '₹4,318 (Robocraze)', why: 'No IR filter: better in the dark, but colours look wrong under normal lights. Not for weddings.' },
+        { name: 'Pi Camera v2 (Build A)', cost: '₹2,000–2,500', est: true, why: '8MP with only ~62° view. Too narrow for a chest badge.' },
+        { name: 'Wide M12 lens for SC3336 (Build B)', cost: '₹300–500', est: true, why: 'Swap in a 120–150° lens if the stock lens is too narrow.' }
+      ],
+      wire: { A: 'Lens goes through the front-cover hole. Fix the camera PCB with foam tape so it can\'t tilt.',
+              B: 'Plugs into the board\'s camera connector. Lens through the front hole, fixed with foam tape.' } },
+    { id: 'cable', n: 3, name: 'Camera cable',
+      role: 'Connects the camera to the board.',
+      A: { name: 'Pi Zero camera cable (22 → 15 pin)', lo: 150, hi: 300, est: true, src: 'Amazon / local', note: 'The camera ships with a 15-pin cable that doesn\'t fit the Zero. Needed.' },
+      B: { name: 'FPC cable bundled with camera', lo: 0, hi: 0, src: 'Comes with SC3336', note: 'Confirm the listing includes the Luckfox cable.' },
+      alts: [ { name: 'Pi Zero "stub" cable, 38 mm', cost: '₹200–350', est: true, why: 'Shortest option. Keeps the camera close to the board and saves space.' } ],
+      wire: { A: 'Contacts face the board on the Zero end. Lift the connector latch gently; it breaks easily.', B: 'Check pin-1 orientation against the Luckfox wiki before closing the latch.' } },
+    { id: 'mic', n: 4, name: 'Microphone',
+      role: 'Clean audio for detecting laughter and applause, transcribing speeches, and syncing badges to each other.',
+      A: { name: 'INMP441 I2S MEMS mic', lo: 150, hi: 245, src: 'Techiesms / Probots', note: 'Digital mic, so no analog noise from the board.' },
+      B: { name: 'INMP441 I2S MEMS mic', lo: 150, hi: 245, src: 'Techiesms / Probots', note: 'Same mic. Or use the RV1106\'s built-in audio input with an analog mic.' },
+      alts: [
+        { name: 'Adafruit SPH0645 I2S mic', cost: '₹800–1,000', est: true, why: 'Better documented, more expensive.' },
+        { name: 'MAX9814 analog mic (Build B)', cost: '₹200–300', est: true, why: 'Uses the RV1106\'s built-in audio input instead of I2S.' }
+      ],
+      wire: { A: 'VDD → 3.3V (pin 1) · GND → GND · SCK → GPIO18 (pin 12) · WS → GPIO19 (pin 35) · SD → GPIO20 (pin 38) · L/R → GND. Mic port faces a hole in the front cover.',
+              B: 'Wire to the board\'s I2S pins (see the Luckfox pinout), or use an analog mic on the built-in audio input.' } },
+    { id: 'imu', n: 5, name: 'Gyroscope (IMU)',
+      role: 'Logs rotation ~200 times a second so video can be stabilized after the event (Gyroflow).',
+      A: { name: 'MPU6050 6-axis', lo: 100, hi: 183, src: 'IndiaMART', note: 'Cheap and well supported. Noisier than newer chips.' },
+      B: { name: 'MPU6050 6-axis', lo: 100, hi: 183, src: 'IndiaMART', note: 'Same part for both builds.' },
+      alts: [
+        { name: 'ICM-42688-P', cost: '₹400–600', est: true, why: 'Much lower noise, the kind action cameras use. Better stabilization.' },
+        { name: 'BMI160', cost: '₹250–350', est: true, why: 'Middle option on price and noise.' }
+      ],
+      wire: { A: 'VCC → 3.3V · GND → GND · SDA → GPIO2 (pin 3) · SCL → GPIO3 (pin 5) · INT → GPIO4 (pin 7). Glue it flat and rigid; a loose gyroscope ruins stabilization.',
+              B: 'Wire to an I2C bus (see the Luckfox pinout). Mount it rigid, same as Build A.' } },
+    { id: 'battery', n: 6, name: 'Battery',
+      role: 'Powers the badge for a full function.',
+      A: { name: '3.7V 3000 mAh LiPo (564755)', lo: 439, hi: 439, src: 'Zbotic', note: '55 × 47 × 5.6 mm. About 4–5 hours with the Pi Zero.' },
+      B: { name: '3.7V 3000 mAh LiPo (564755)', lo: 439, hi: 439, src: 'Zbotic', note: 'Same battery. About 6–8 hours with the Luckfox.' },
+      alts: [
+        { name: '2000 mAh LiPo', cost: '₹300–400', est: true, why: 'Thinner badge, about a third less runtime.' },
+        { name: '18650 cell + holder', cost: '₹250–400', est: true, why: 'Cheap and easy to swap, but round and bulky.' }
+      ],
+      wire: { A: 'Battery → charge module B+ / B−. Never connect it straight to the board. Wrap in Kapton tape.', B: 'Battery → TP4056 B+ / B−. Wrap in Kapton tape.' } },
+    { id: 'power', n: 7, name: 'Charge + boost module',
+      role: 'Charges the battery over USB and steps 3.7 V up to the 5 V the board needs.',
+      A: { name: 'IP5306 charge + boost (5V 2A)', lo: 100, hi: 150, est: true, src: 'Robu / local', note: 'Handles the Pi Zero\'s 600–900 mA spikes without random reboots.' },
+      B: { name: 'TP4056 + MT3608', lo: 80, hi: 150, src: 'Probots / Robocraze / Robu', note: 'Fine for the Luckfox\'s lower power draw.' },
+      alts: [
+        { name: 'PiSugar 3 (Build A)', cost: '~$40 (Tindie / Amazon)', why: 'Bolt-on battery, charger and clock for the Pi Zero. Easiest, most expensive.' },
+        { name: 'TP4056 + MT3608 for Build A', cost: '₹80–120', why: 'Cheapest, but can brown out under the Pi Zero\'s load spikes.' }
+      ],
+      wire: { A: 'B+/B− to battery · 5V OUT → Pi pin 2 · GND → pin 6. Measure 5.0–5.2 V under load before connecting the Pi.',
+              B: 'TP4056 B+/B− to battery · TP4056 OUT → MT3608 IN · set MT3608 to 5.0 V with its trimmer before connecting the board.' } },
+    { id: 'motor', n: 8, name: 'Vibration motor + driver',
+      role: 'Buzzes when a tap is saved, so the guest knows it worked.',
+      A: { name: '12 mm coin motor + BC547 + 1N4148 + 1kΩ', lo: 69, hi: 75, src: 'Robu + Lamington Road', note: 'The transistor protects the GPIO pin.' },
+      B: { name: '12 mm coin motor + BC547 + 1N4148 + 1kΩ', lo: 69, hi: 75, src: 'Robu + Lamington Road', note: 'Same circuit on any free GPIO.' },
+      alts: [
+        { name: '7 mm coin motor', cost: '₹65 (Robu)', why: 'Thinner, weaker buzz.' },
+        { name: 'DRV2605L haptic driver', cost: '₹400–600', est: true, why: 'Crisp click patterns. More than a prototype needs.' }
+      ],
+      wire: { A: 'GPIO22 (pin 15) → 1kΩ → BC547 base · motor between 3.3V and collector · emitter → GND · 1N4148 across the motor. Never drive the motor straight from a GPIO pin.',
+              B: 'Same transistor circuit from any free GPIO (see the Luckfox pinout).' } },
+    { id: 'button', n: 9, name: 'Button + LED',
+      role: 'The "save this moment" button, plus a light showing recording status.',
+      A: { name: '6×6 tactile switch + 3 mm LED + 330Ω', lo: 50, hi: 100, est: true, src: 'Lamington Road', note: 'Button on the top edge, LED on the front.' },
+      B: { name: '6×6 tactile switch + 3 mm LED + 330Ω', lo: 50, hi: 100, est: true, src: 'Lamington Road', note: 'Same parts.' },
+      alts: [
+        { name: 'TTP223 touch sensor', cost: '₹30–50', est: true, why: 'No moving parts, but clothing can trigger it by accident.' },
+        { name: '12 mm tactile switch with cap', cost: '₹30–60', est: true, why: 'Bigger and easier to find by feel.' }
+      ],
+      wire: { A: 'Button: GPIO17 (pin 11) → GND, internal pull-up on · LED: GPIO27 (pin 13) → 330Ω → LED → GND.',
+              B: 'Button and LED on any two free GPIOs, same circuit (see the Luckfox pinout).' } },
+    { id: 'sd', n: 10, name: 'microSD card',
+      role: 'Stores the footage. 64 GB holds 15+ hours of 1080p H.264.',
+      A: { name: '64 GB microSD', lo: 500, hi: 700, est: true, src: 'Amazon', note: 'Class 10 / U3 minimum.' },
+      B: { name: '64 GB microSD', lo: 500, hi: 700, est: true, src: 'Amazon', note: 'Only if your Luckfox variant has a slot.' },
+      alts: [
+        { name: 'High Endurance microSD (dashcam grade)', cost: '₹800–1,100', est: true, why: 'Recommended. Built for continuous recording; normal cards wear out or corrupt.' },
+        { name: '128 GB microSD', cost: '₹900–1,300', est: true, why: 'Covers two functions without offloading.' }
+      ],
+      wire: { A: 'Slot on the left edge of the Pi. Leave a cut-out in the case so it can be swapped.', B: 'Check slot position on your variant and leave a case cut-out.' } },
+    { id: 'case', n: 11, name: 'Case + magnetic clip',
+      role: 'Holds everything, with holes for the lens, mic and LED, and a magnet clip for clothing.',
+      A: { name: '3D-printed case + neodymium magnet clip', lo: 300, hi: 600, est: true, src: 'Local print service', note: '≈ 74 × 60 × 24 mm. PETG holds up to heat better than PLA.' },
+      B: { name: '3D-printed case + neodymium magnet clip', lo: 300, hi: 600, est: true, src: 'Local print service', note: 'Same case; Build B can be a little thinner.' },
+      alts: [
+        { name: 'ABS project box (Lamington Road)', cost: '₹100–200', est: true, why: 'Drill the holes yourself. Fastest for the first build.' },
+        { name: 'Lanyard instead of magnet', cost: '₹30–50', est: true, why: 'Swings while walking, so footage gets worse.' }
+      ],
+      wire: { A: 'Front holes: lens, mic port, LED. Top: button. Side: USB charging + microSD cut-outs. Vent slots near the board.', B: 'Same holes. Vent slots matter less; Luckfox runs cooler.' } }
+  ];
+
+  var fmt = function (v) { return '₹' + v.toLocaleString('en-IN'); };
+  var range = function (o) { return o.lo === o.hi ? (o.lo === 0 ? 'incl.' : fmt(o.lo)) : fmt(o.lo) + '–' + o.hi.toLocaleString('en-IN'); };
+  var short = function (o) { if (o.lo === 0 && o.hi === 0) return 'incl.'; var m = Math.round((o.lo + o.hi) / 2); return '~' + m.toLocaleString('en-IN'); };
+  function total(b) { var lo = 0, hi = 0; P.forEach(function (p) { lo += p[b].lo; hi += p[b].hi; }); return { lo: lo, hi: hi }; }
+  var tA = total('A'), tB = total('B');
+  document.getElementById('totA').textContent = range(tA) + ' per badge';
+  document.getElementById('totB').textContent = range(tB) + ' per badge';
+  document.getElementById('sumA').textContent = '~' + Math.round((tA.lo + tA.hi) / 2).toLocaleString('en-IN');
+  document.getElementById('sumB').textContent = '~' + Math.round((tB.lo + tB.hi) / 2).toLocaleString('en-IN');
+
+  var state = { build: 'A', sel: 'camera' };
+  try { var saved = localStorage.getItem('badge-build'); if (saved === 'A' || saved === 'B') state.build = saved; } catch (e) {}
+
+  // ---------- Parts list ----------
+  var rowsEl = document.getElementById('rows');
+  P.forEach(function (p) {
+    var b = document.createElement('button');
+    b.className = 'row'; b.id = 'row-' + p.id; b.setAttribute('aria-pressed', 'false');
+    b.innerHTML = '<span class="i">' + p.n + '</span><span class="n">' + p.name + '</span><span class="p">' + short(p.A) + '</span><span class="p">' + short(p.B) + '</span>';
+    b.addEventListener('click', function () { select(p.id); });
+    rowsEl.appendChild(b);
+  });
+
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function optHtml(p, b) {
+    var o = p[b];
+    return '<div class="opt ' + b + '"><span class="which">Build ' + b + (b === state.build ? ' · selected' : '') + '</span>' +
+      '<span class="pn">' + esc(o.name) + '</span>' +
+      '<span class="pc">' + range(o) + (o.est ? '<span class="est">est.</span>' : '') + '</span>' +
+      '<span class="ps">' + esc(o.src) + '</span>' +
+      '<span class="pnote">' + esc(o.note) + '</span></div>';
+  }
+  function renderSheet() {
+    var p = P.filter(function (x) { return x.id === state.sel; })[0];
+    var alts = p.alts.map(function (a) {
+      return '<div class="alt"><span class="an">' + esc(a.name) + '</span><span class="ac">' + esc(a.cost) + (a.est ? '<span class="est">est.</span>' : '') + '</span><span class="aw">' + esc(a.why) + '</span></div>';
+    }).join('');
+    document.getElementById('sheet').innerHTML =
+      '<div class="sheet-head"><span class="big">' + p.n + '</span><div><h3>' + p.name + '</h3><p>' + esc(p.role) + '</p></div></div>' +
+      '<div class="ab">' + optHtml(p, 'A') + optHtml(p, 'B') + '</div>' +
+      '<div class="howto"><span class="label">Fit &amp; wire · Build ' + state.build + '</span>' + esc(p.wire[state.build]) + '</div>' +
+      '<div><span class="label">Alternatives</span><div class="alts">' + alts + '</div></div>';
+  }
+  function renderWiring() {
+    document.getElementById('wireTitle').textContent = 'Wiring for Build ' + state.build;
+    document.getElementById('wireNote').textContent = state.build === 'A'
+      ? 'Pin numbers are physical header pins on the Raspberry Pi Zero 2 W. Use 3.3 V logic everywhere; the 5 V pin is for power in only.'
+      : 'Luckfox pin assignments depend on the board variant and device-tree setup. Use the official Luckfox wiki pinout for your exact board; the circuits are the same as Build A.';
+    document.getElementById('wireBody').innerHTML = P.map(function (p) {
+      return '<tr><td class="pin">' + p.n + '</td><td><b>' + p.name + '</b><br><span style="color:var(--muted);font-size:.84rem">' + esc(p[state.build].name) + '</span></td><td>' + esc(p.wire[state.build]) + '</td></tr>';
+    }).join('');
+  }
+
+  function select(id) {
+    state.sel = id;
+    P.forEach(function (p) { document.getElementById('row-' + p.id).setAttribute('aria-pressed', p.id === id ? 'true' : 'false'); });
+    tagEls.forEach(function (t) { t.el.setAttribute('aria-pressed', t.id === id ? 'true' : 'false'); });
+    renderSheet();
+    highlight();
+  }
+
+  function setBuild(b) {
+    state.build = b;
+    try { localStorage.setItem('badge-build', b); } catch (e) {}
+    document.getElementById('app').dataset.build = b;
+    document.getElementById('buildA').setAttribute('aria-pressed', b === 'A');
+    document.getElementById('buildB').setAttribute('aria-pressed', b === 'B');
+    document.getElementById('hudBuild').textContent = 'Build ' + b;
+    buildModel();
+    renderSheet(); renderWiring(); highlight();
+  }
+  document.getElementById('buildA').addEventListener('click', function () { setBuild('A'); });
+  document.getElementById('buildB').addEventListener('click', function () { setBuild('B'); });
+
+  // ---------- 3D ----------
+  var stage = document.getElementById('stage');
+  var tagsEl = document.getElementById('tags');
+  var tagEls = [];
+  P.forEach(function (p) {
+    var t = document.createElement('button');
+    t.className = 'tag'; t.setAttribute('aria-pressed', 'false'); t.setAttribute('aria-label', p.n + ' ' + p.name);
+    t.innerHTML = p.n + '<span class="nm">' + p.name + '</span>';
+    t.addEventListener('click', function () { select(p.id); });
+    tagsEl.appendChild(t);
+    tagEls.push({ id: p.id, el: t });
+  });
+
+  var gl = !!window.THREE;
+  var renderer, scene, cam, controls, root, groups = [], explode = 0.7, explodeTarget = 0.7;
+  try {
+    if (!gl) throw new Error('no three');
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    stage.insertBefore(renderer.domElement, tagsEl);
+  } catch (e) {
+    gl = false;
+    var m = document.createElement('div'); m.className = 'nogl';
+    m.textContent = '3D view could not start in this browser. The parts list and wiring below still work.';
+    stage.appendChild(m);
+  }
+
+  function mat(color, o) {
+    o = o || {};
+    return new THREE.MeshStandardMaterial({ color: color, roughness: o.r != null ? o.r : 0.6, metalness: o.m || 0, transparent: !!o.op, opacity: o.op || 1, depthWrite: !o.op });
+  }
+  function box(w, h, d, m, x, y, z) { var me = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); me.position.set(x || 0, y || 0, z || 0); return me; }
+  function cyl(r, h, m, x, y, z, alongZ) { var me = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 32), m); if (alongZ) me.rotation.x = Math.PI / 2; me.position.set(x || 0, y || 0, z || 0); return me; }
+
+  function part(id, base, dir, tagOff) {
+    var g = new THREE.Group();
+    g.userData = { partId: id, base: new THREE.Vector3(base[0], base[1], base[2]), dir: new THREE.Vector3(dir[0], dir[1], dir[2]), tagOff: new THREE.Vector3((tagOff || [0, 0, 0])[0], (tagOff || [0, 0, 0])[1], (tagOff || [0, 0, 0])[2]), tag: tagOff !== null };
+    root.add(g); groups.push(g);
+    return g;
+  }
+
+  function buildModel() {
+    if (!gl) return;
+    if (root) { scene.remove(root); root.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+    root = new THREE.Group(); groups = []; scene.add(root);
+    var A = state.build === 'A';
+
+    // 11 Case: front plate and back shell
+    var front = part('case', [0, 0, 11], [0, 0, 72], [-30, 24, 1]);
+    front.add(box(74, 60, 1.6, mat(0x9fb3c8, { op: 0.22, r: 0.2 })));
+    var edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(74, 60, 1.6)), new THREE.LineBasicMaterial({ color: 0x6b7c8c }));
+    front.add(edge);
+    front.add(new THREE.Mesh(new THREE.TorusGeometry(A ? 6 : 8.5, 1.2, 12, 40), mat(0x2a2f36, { r: 0.4 })).translateY(A ? 14 : 10));
+    var back = part('case', [0, 0, -8], [0, 0, -56], null);
+    back.add(box(74, 60, 1.6, mat(0x5d6b78, { r: 0.7 })));
+    var wm = mat(0x9fb3c8, { op: 0.16, r: 0.3 });
+    back.add(box(74, 1.6, 18, wm, 0, 29.2, 9)); back.add(box(74, 1.6, 18, wm, 0, -29.2, 9));
+    back.add(box(1.6, 60, 18, wm, 36.2, 0, 9)); back.add(box(1.6, 60, 18, wm, -36.2, 0, 9));
+    back.add(box(34, 12, 4, mat(0x2b2f33, { m: 0.6, r: 0.35 }), 0, 8, -2.8));
+    back.add(cyl(4, 1.2, mat(0xc0c6cc, { m: 0.9, r: 0.25 }), -10, 8, -5.2, true));
+    back.add(cyl(4, 1.2, mat(0xc0c6cc, { m: 0.9, r: 0.25 }), 10, 8, -5.2, true));
+
+    // 1 Board
+    var board = part('board', [0, -13, 4], [0, 0, 6], [24, 10, 2]);
+    if (A) {
+      board.add(box(65, 30, 1.4, mat(0x1e6b3a, { r: 0.55 })));
+      board.add(box(10, 10, 1.2, mat(0x8c939a, { m: 0.6, r: 0.35 }), -2, -2, 1.3));
+      board.add(box(51, 2.6, 0.3, mat(0xd4a72c, { m: 0.8, r: 0.3 }), 0, 12.6, 0.85));
+      board.add(box(11, 3.5, 3.2, mat(0xb9bec4, { m: 0.8, r: 0.3 }), -20, -13.6, 2.2));
+      board.add(box(8, 3, 2.6, mat(0xb9bec4, { m: 0.8, r: 0.3 }), 9, -13.8, 1.9));
+      board.add(box(8, 3, 2.6, mat(0xb9bec4, { m: 0.8, r: 0.3 }), 21, -13.8, 1.9));
+      board.add(box(4, 17, 1.4, mat(0x222222), 31, 0, 1.3));
+    } else {
+      board.add(box(50, 26, 1.4, mat(0x1e2126, { r: 0.5 })));
+      board.add(box(9, 9, 1.1, mat(0x3a3f45, { r: 0.4 }), -4, 0, 1.2));
+      board.add(box(9, 3.4, 3.2, mat(0xb9bec4, { m: 0.8, r: 0.3 }), -19, -11.6, 2.2));
+      board.add(box(14, 4, 1.2, mat(0xd8d2c0), 12, 10, 1.2));
+      board.add(box(46, 1.6, 0.3, mat(0xd4a72c, { m: 0.8, r: 0.3 }), 0, -12, 0.85));
+      board.add(box(46, 1.6, 0.3, mat(0xd4a72c, { m: 0.8, r: 0.3 }), 0, 12, 0.85));
+    }
+
+    // 10 microSD
+    var sd = part('sd', A ? [-30, -13, 5.3] : [-22, -13, 5.3], [-26, -4, 8], [-6, 0, 1]);
+    sd.add(box(11, 15, 1, mat(0x1c3a6e, { r: 0.4 })));
+    sd.add(box(9, 4, 1.05, mat(0xdcdcdc, { r: 0.5 }), 0, 4.5, 0));
+
+    // 2 Camera
+    var camG = part('camera', A ? [0, 14, 8.5] : [0, 10, 7.5], [0, 8, 36], A ? [16, 6, 0] : [22, 8, 0]);
+    if (A) {
+      camG.add(box(25, 24, 1, mat(0x1e6b3a, { r: 0.55 })));
+      camG.add(box(8.5, 8.5, 3.5, mat(0x111214, { r: 0.4 }), 0, 0, 2.2));
+      camG.add(cyl(3.2, 1.2, mat(0x2b4a7a, { m: 0.3, r: 0.1 }), 0, 0, 4.4, true));
+      camG.add(box(16, 4, 1.2, mat(0xe6dfcf), 0, -10, 1));
+    } else {
+      camG.add(box(38, 38, 1.2, mat(0x1e2126, { r: 0.5 })));
+      camG.add(box(14, 14, 7, mat(0x111214, { r: 0.5 }), 0, 0, 4));
+      camG.add(cyl(6.5, 9, mat(0x1a1b1d, { r: 0.4 }), 0, 0, 11.5, true));
+      camG.add(cyl(4.6, 0.6, mat(0x2b4a7a, { m: 0.3, r: 0.1 }), 0, 0, 16.2, true));
+    }
+
+    // 3 Cable
+    var cable = part('cable', A ? [16, 0, 6.6] : [0, -3, 6], [8, -2, 18], [6, 0, 0]);
+    if (A) {
+      var rib = box(14, 24, 0.3, mat(0xe8dcc0, { r: 0.6 }));
+      rib.rotation.z = -0.55; cable.add(rib);
+    } else {
+      cable.add(box(9, 12, 0.3, mat(0xc77a1f, { r: 0.5 })));
+    }
+
+    // 4 Mic
+    var mic = part('mic', [-25, 20, 9], [-8, 4, 30], [-9, 4, 0]);
+    mic.add(cyl(7, 1.2, mat(0x3a2e8f, { r: 0.5 }), 0, 0, 0, true));
+    mic.add(box(3.5, 2.6, 1.2, mat(0xc0c6cc, { m: 0.8, r: 0.3 }), 0, 0, 1.2));
+
+    // 5 IMU
+    var imu = part('imu', [26, 16, 7], [10, 4, 24], [9, 4, 0]);
+    imu.add(box(21, 16, 1.2, mat(0x1d4f9e, { r: 0.5 })));
+    imu.add(box(4, 4, 1, mat(0x111214), 0, 0, 1.1));
+
+    // 9 Button + LED
+    var btn = part('button', [18, 28.4, 3], [0, 24, 10], [7, 8, 0]);
+    btn.add(box(6, 3.5, 6, mat(0x15171a, { r: 0.5 })));
+    btn.add(cyl(1.8, 2.4, mat(0x2a2d31, { r: 0.6 }), 0, 2.9, 0));
+    var led = new THREE.Mesh(new THREE.SphereGeometry(1.6, 16, 12), mat(0xe03a3a, { r: 0.2 }));
+    led.position.set(6, -6, 7.2); btn.add(led);
+
+    // 7 Charge + boost
+    var pw = part('power', [22, 12, 0.5], [12, 4, -16], [10, 0, 0]);
+    pw.add(box(26, 17, 1.4, mat(A ? 0x1d4f9e : 0x1d4f9e, { r: 0.5 })));
+    pw.add(box(7.5, 5.5, 3, mat(0xb9bec4, { m: 0.8, r: 0.3 }), -9.5, 0, 2));
+    pw.add(box(5, 5, 1, mat(0x111214), 3, 0, 1.2));
+    if (!A) pw.add(box(6, 6, 3, mat(0x2a6fd6, { r: 0.4 }), 9, 4, 1.8));
+
+    // 8 Vibration motor
+    var mo = part('motor', [-22, 13, 1], [-12, 4, -16], [-7, 3, 0]);
+    mo.add(cyl(6, 3.4, mat(0xbfc5cb, { m: 0.85, r: 0.3 }), 0, 0, 0, true));
+    mo.add(box(5, 1, 0.3, mat(0xc0392b), 6, -2, 0));
+
+    // 6 Battery
+    var bat = part('battery', [0, -2, -4], [0, 0, -34], [22, 18, 0]);
+    bat.add(box(55, 47, 5.6, mat(0x8fa3b8, { m: 0.35, r: 0.35 })));
+    bat.add(box(30, 18, 0.2, mat(0xf2f2f2, { r: 0.8 }), -6, 4, 2.9));
+    bat.add(box(1.2, 8, 1.2, mat(0xc0392b), 22, 27, 0));
+    bat.add(box(1.2, 8, 1.2, mat(0x222222), 25, 27, 0));
+
+    applyExplode(); highlight();
+  }
+
+  function applyExplode() {
+    groups.forEach(function (g) { g.position.copy(g.userData.base).addScaledVector(g.userData.dir, explode); });
+  }
+  function highlight() {
+    if (!gl) return;
+    groups.forEach(function (g) {
+      var on = g.userData.partId === state.sel;
+      g.traverse(function (o) { if (o.material && o.material.emissive) { o.material.emissive.setHex(on ? 0x4a3a10 : 0x000000); } });
+    });
+  }
+
+  if (gl) {
+    scene = new THREE.Scene();
+    cam = new THREE.PerspectiveCamera(35, 1, 1, 3000);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.85));
+    var d1 = new THREE.DirectionalLight(0xffffff, 0.8); d1.position.set(80, 120, 160); scene.add(d1);
+    var d2 = new THREE.DirectionalLight(0xffffff, 0.35); d2.position.set(-120, -40, -100); scene.add(d2);
+    controls = new THREE.OrbitControls(cam, renderer.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.08; controls.minDistance = 80; controls.maxDistance = 600; controls.enablePan = false;
+    function resetView() { cam.position.set(190, 95, 230); controls.target.set(0, 4, 0); controls.update(); }
+    resetView();
+    var autoRot = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    controls.autoRotate = autoRot; controls.autoRotateSpeed = 0.8;
+    controls.addEventListener('start', function () { controls.autoRotate = false; });
+
+    document.getElementById('btnReset').addEventListener('click', resetView);
+
+    function resize() {
+      var w = stage.clientWidth, h = stage.clientHeight;
+      renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resize);
+
+    // click picking
+    var ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), down = null;
+    renderer.domElement.addEventListener('pointerdown', function (e) { down = { x: e.clientX, y: e.clientY }; });
+    renderer.domElement.addEventListener('pointerup', function (e) {
+      if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return;
+      var r = renderer.domElement.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, cam);
+      var hits = ray.intersectObjects(root.children, true);
+      for (var i = 0; i < hits.length; i++) {
+        var o = hits[i].object;
+        while (o && !(o.userData && o.userData.partId)) o = o.parent;
+        // skip the see-through case when something solid is behind it
+        if (o && o.userData.partId === 'case' && hits[i].object.material.transparent && i < hits.length - 1) continue;
+        if (o) { select(o.userData.partId); break; }
+      }
+    });
+
+    var v = new THREE.Vector3();
+    function updateTags() {
+      var w = stage.clientWidth, h = stage.clientHeight;
+      tagEls.forEach(function (t) {
+        var g = null;
+        for (var i = 0; i < groups.length; i++) if (groups[i].userData.partId === t.id && groups[i].userData.tag) { g = groups[i]; break; }
+        if (!g) { t.el.hidden = true; return; }
+        v.copy(g.userData.tagOff).add(g.position).applyMatrix4(root.matrixWorld).project(cam);
+        if (v.z > 1) { t.el.hidden = true; return; }
+        t.el.hidden = false;
+        t.el.style.left = ((v.x + 1) / 2 * w) + 'px';
+        t.el.style.top = ((1 - v.y) / 2 * h) + 'px';
+      });
+    }
+
+    function loop() {
+      requestAnimationFrame(loop);
+      if (Math.abs(explode - explodeTarget) > 0.001) { explode += (explodeTarget - explode) * 0.12; applyExplode(); }
+      controls.update();
+      renderer.render(scene, cam);
+      updateTags();
+    }
+    resize();
+    loop();
+  }
+
+  var slider = document.getElementById('explode');
+  slider.addEventListener('input', function () { explodeTarget = explode = slider.value / 100; if (gl) applyExplode(); });
+  document.getElementById('btnAssembled').addEventListener('click', function () { explodeTarget = 0; slider.value = 0; });
+  document.getElementById('btnExploded').addEventListener('click', function () { explodeTarget = 1; slider.value = 100; });
+  explode = explodeTarget = slider.value / 100;
+
+  setBuild(state.build);
+  select(state.sel);
+})();
+</script>
+
+</body></html>
